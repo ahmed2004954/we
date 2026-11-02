@@ -1,4 +1,8 @@
 {
   "last_error": null,
-  "quotas": {}
+  "quotas": {
+    "Super 2 speed (250 GB)": {
+      "level": 0
+    }
+  }
 }
