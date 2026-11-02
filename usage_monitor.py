@@ -121,9 +121,9 @@ def fetch_my_we_data(service_number, password):
         browser = playwright.chromium.launch(headless=True)
         page = browser.new_page()
         page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60000)
-        page.get_by_label(re.compile("Service number", re.IGNORECASE)).fill(service_number)
-        page.get_by_label(re.compile("Service Type", re.IGNORECASE)).select_option(label="Internet")
-        page.get_by_label(re.compile("Password", re.IGNORECASE)).fill(password)
+        page.locator("input:not([type='hidden']):not([type='password'])").first.fill(service_number)
+        page.locator("select").first.select_option(label="Internet")
+        page.locator("input[type='password']").first.fill(password)
         page.get_by_role("button", name=re.compile("Login", re.IGNORECASE)).click()
         wait_for_page_content(page, "Your Current Plan")
 
