@@ -80,6 +80,58 @@ def _click_visible_text(page: Page, text: str, timeout_ms: int = 10_000) -> None
     raise ScrapeError(f"Option '{text}' not found in Service Type dropdown")
 
 
+def _handle_captcha(page: Page, max_retries: int = 3) -> bool:
+    """Detect and solve the WE verification CAPTCHA popup if it appears."""
+    modal = page.locator(".ant-modal, .modal-dialog, [role='dialog']").filter(
+        has_text=re.compile(r"(Verification|يرجى إدخال الرمز|Please enter the code)", re.I)
+    )
+    try:
+        modal.wait_for(state="visible", timeout=6_000)
+    except PWTimeout:
+        return False
+
+    print("CAPTCHA verification prompt detected, attempting to solve...")
+    try:
+        import ddddocr
+        ocr = ddddocr.DdddOcr(show_ad=False)
+    except Exception as exc:
+        print(f"ddddocr not available: {exc}")
+        return False
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            img_elem = modal.locator("img").first
+            img_elem.wait_for(state="visible", timeout=5_000)
+            page.wait_for_timeout(500)
+            img_bytes = img_elem.screenshot()
+
+            code = ocr.classification(img_bytes).strip()
+            print(f"Captcha attempt {attempt}: recognized code '{code}'")
+            if not code:
+                continue
+
+            code_input = modal.locator("input").first
+            code_input.fill(code)
+
+            ok_button = modal.get_by_role("button", name=re.compile(r"^(Ok|موافق)$", re.I)).first
+            ok_button.click()
+
+            page.wait_for_timeout(2_000)
+            if not modal.is_visible():
+                print("Captcha solved and modal closed!")
+                return True
+
+            # Refresh captcha if code was rejected
+            reload_btn = modal.locator(".anticon-reload, [class*='reload'], [class*='refresh'], button").first
+            if reload_btn.is_visible():
+                reload_btn.click()
+                page.wait_for_timeout(1_000)
+        except Exception as e:
+            print(f"Error during captcha solve attempt {attempt}: {e}")
+
+    return False
+
+
 def _login(page: Page, number: str, password: str) -> None:
     page.goto(LOGIN_URL, wait_until="domcontentloaded")
     number_input = page.locator(NUMBER_INPUT)
@@ -87,24 +139,45 @@ def _login(page: Page, number: str, password: str) -> None:
     number_input.fill(number)
     number_input.press("Tab")
 
-    # The Service Type dropdown only appears for some numbers (e.g. landlines).
+    # The Service Type dropdown appears for landlines (e.g. 050..., 02...).
     service_type = page.locator(SERVICE_TYPE_SELECT)
+    wait_time = 12_000 if number.startswith("0") else 4_000
     try:
-        service_type.wait_for(state="visible", timeout=5_000)
+        service_type.wait_for(state="visible", timeout=wait_time)
     except PWTimeout:
         pass
     else:
         service_type.click()
-        _click_visible_text(page, SERVICE_TYPE)
+        try:
+            _click_visible_text(page, SERVICE_TYPE, timeout_ms=5_000)
+        except ScrapeError:
+            _click_visible_text(page, "الإنترنت", timeout_ms=5_000)
 
     page.locator(PASSWORD_INPUT).fill(password)
     login_button = page.get_by_role("button", name=re.compile(r"^\s*(Login|تسجيل الدخول)\s*$", re.I)).first
     login_button.click(timeout=15_000)
 
+    # Check if a verification CAPTCHA popup appeared
+    _handle_captcha(page)
+
     try:
-        page.wait_for_url(lambda url: "#/login" not in url, timeout=45_000)
+        page.wait_for_url(lambda url: "#/login" not in url, timeout=30_000)
     except PWTimeout as exc:
         _save_debug(page, "login_failed")
+        # Check if CAPTCHA modal is still blocking
+        modal = page.locator(".ant-modal, [role='dialog']").filter(
+            has_text=re.compile(r"(Verification|يرجى إدخال الرمز|Please enter the code)", re.I)
+        )
+        if modal.is_visible():
+            raise ScrapeError(
+                "الموقع طلب رمز تحقق (CAPTCHA) نظراً لتكرار محاولات الدخول من سيرفر خارجي. يرجى الانتظار 15-30 دقيقة قبل المحاولة مرة أخرى."
+            ) from exc
+
+        # Check for error message on the page
+        err_msg = page.locator(".ant-message-error, .alert-danger, .error-msg, [class*='error']").first
+        if err_msg.is_visible():
+            raise ScrapeError(f"Login failed: {err_msg.inner_text().strip()}") from exc
+
         raise ScrapeError("Login failed: still on the login page (wrong number/password or site changed)") from exc
 
 
