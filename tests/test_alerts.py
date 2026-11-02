@@ -50,3 +50,17 @@ def test_multiple_quotas_independent_and_removed_dropped():
 def test_other_state_keys_preserved():
     _, state = compute_alerts([q("Main", 0)], {"quotas": {}, "last_error": "x"})
     assert state["last_error"] == "x"
+
+
+def test_total_quota_alerting():
+    state = {"quotas": {}}
+    main = q("Main", 20, 100)
+    game = q("GAME ON", 35, 40)  # 35/40 = 87.5% -> level 75
+    total = q("Total", 55, 140)  # 55/140 = 39.2% -> level 25
+
+    alerts, state = compute_alerts([main, game], state, total_quota=total)
+    names_and_levels = {(a.quota.name, a.level) for a in alerts}
+    assert ("GAME ON", 75) in names_and_levels
+    assert ("Total", 25) in names_and_levels
+    assert state["quotas"]["Total"]["level"] == 25
+    assert state["quotas"]["GAME ON"]["level"] == 75

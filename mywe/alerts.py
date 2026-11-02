@@ -21,9 +21,14 @@ def level_for(used_pct: float) -> int:
     return max((t for t in THRESHOLDS if used_pct >= t), default=0)
 
 
-def compute_alerts(quotas: list[Quota], state: dict[str, Any]) -> tuple[list[Alert], dict[str, Any]]:
+def compute_alerts(
+    quotas: list[Quota],
+    state: dict[str, Any],
+    total_quota: Quota | None = None,
+) -> tuple[list[Alert], dict[str, Any]]:
     """Compare current quotas with the stored state.
 
+    - Tracks both individual quotas and (if multiple bundles) the total usage.
     - An alert fires when a quota reaches a higher threshold than last stored.
       Skipping several thresholds at once yields a single alert (current level).
     - If the level drops (bundle renewed), the stored level is reset silently.
@@ -33,7 +38,11 @@ def compute_alerts(quotas: list[Quota], state: dict[str, Any]) -> tuple[list[Ale
     new_quotas: dict[str, Any] = {}
     alerts: list[Alert] = []
 
-    for q in quotas:
+    items = list(quotas)
+    if total_quota is not None and len(quotas) > 1:
+        items.append(total_quota)
+
+    for q in items:
         level = level_for(q.used_pct)
         prev_level = int((previous.get(q.name) or {}).get("level", 0))
         if level > prev_level:

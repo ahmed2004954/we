@@ -93,16 +93,23 @@ def main() -> int:
         return 1
 
     print(f"Balance: {data.balance}")
+    total = data.total
+    if total:
+        print(f"Total: {total.remaining:.2f}/{total.total:.2f} GB remaining, used {total.used:.2f} GB ({total.used_pct:.1f}%)")
     for q in data.quotas:
         print(f"  {q.name}: {q.remaining:.2f}/{q.total:.2f} GB remaining, used {q.used:.2f} GB ({q.used_pct:.1f}%)")
 
-    alerts, new_state = compute_alerts(data.quotas, state)
+    alerts, new_state = compute_alerts(
+        data.quotas,
+        state,
+        total_quota=data.total if len(data.quotas) > 1 else None,
+    )
     new_state["last_error"] = None
 
     if args.report:
         send(format_report(data))
     if alerts:
-        send(format_alerts(alerts, data.balance))
+        send(format_alerts(alerts, data))
     else:
         print("No new threshold crossed.")
 

@@ -17,7 +17,7 @@ from typing import Any
 from playwright.sync_api import Page, Response, TimeoutError as PWTimeout, sync_playwright
 
 from .models import AccountData, Quota
-from .parsing import parse_balance_text, parse_free_unit_response, parse_usage_text
+from .parsing import parse_balance_text, parse_free_unit_response, parse_total_usage, parse_usage_text
 
 LOGIN_URL = "https://my.te.eg/echannel/#/login"
 OVERVIEW_URL = "https://my.te.eg/echannel/#/accountoverview"
@@ -119,10 +119,10 @@ def _read_balance(page: Page) -> str | None:
     return parse_balance_text(page.inner_text("body"))
 
 
-def _read_quotas(page: Page, capture: _Capture) -> list[Quota]:
+def _read_quotas(page: Page, capture: _Capture) -> tuple[list[Quota], Quota | None]:
     page.goto(USAGE_URL, wait_until="domcontentloaded")
     try:
-        page.get_by_text(re.compile(r"Used\s*\d", re.I)).first.wait_for(timeout=45_000)
+        page.get_by_text(re.compile(r"(Used|مستخدمة|متبقية|جيجا|GB)\s*\d", re.I)).first.wait_for(timeout=45_000)
     except PWTimeout:
         _save_debug(page, "usage")
         raise ScrapeError("Usage page did not show any quota")
@@ -131,14 +131,17 @@ def _read_quotas(page: Page, capture: _Capture) -> list[Quota]:
     except PWTimeout:
         pass
 
+    page_text = page.inner_text("body")
+    total_quota = parse_total_usage(page_text)
+
     quotas = parse_free_unit_response(capture.latest("queryFreeUnit"))
     if quotas:
-        return quotas
-    quotas = parse_usage_text(page.inner_text("body"))
+        return quotas, total_quota
+    quotas = parse_usage_text(page_text)
     if not quotas:
         _save_debug(page, "usage")
         raise ScrapeError("Could not parse any quota from the usage page")
-    return quotas
+    return quotas, total_quota
 
 
 def fetch_account_data(number: str, password: str, *, headless: bool = True, dump: bool = False) -> AccountData:
@@ -159,14 +162,14 @@ def fetch_account_data(number: str, password: str, *, headless: bool = True, dum
         try:
             _login(page, number, password)
             balance = _read_balance(page)
-            quotas = _read_quotas(page, capture)
+            quotas, total_quota = _read_quotas(page, capture)
             if dump:
                 _save_debug(page, "usage")
                 DEBUG_DIR.mkdir(exist_ok=True)
                 (DEBUG_DIR / "api_responses.json").write_text(
                     json.dumps(capture.responses, ensure_ascii=False, indent=2), encoding="utf-8"
                 )
-            return AccountData(balance=balance, quotas=quotas)
+            return AccountData(balance=balance, quotas=quotas, total_quota=total_quota)
         except ScrapeError:
             raise
         except Exception:

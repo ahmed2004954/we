@@ -28,40 +28,91 @@ def _fmt(n: float) -> str:
     return f"{n:,.2f}".rstrip("0").rstrip(".")
 
 
-def _quota_lines(q: Quota) -> list[str]:
+def _progress_bar(pct: float, length: int = 10) -> str:
+    filled = int(round((pct / 100.0) * length))
+    filled = max(0, min(length, filled))
+    return "█" * filled + "░" * (length - filled)
+
+
+def _quota_lines(q: Quota, prefix: str = "📦") -> list[str]:
     return [
-        f"📦 <b>{html.escape(q.name)}</b>",
-        f"المتبقي | Remaining: {_fmt(q.remaining)} / {_fmt(q.total)} GB",
-        f"المستخدم | Used: {_fmt(q.used)} GB ({q.used_pct:.1f}%)",
+        f"{prefix} <b>{html.escape(q.name)}</b>",
+        f"• المتبقي | Remaining: <b>{_fmt(q.remaining)}</b> / {_fmt(q.total)} GB",
+        f"• المستخدم | Used: <b>{_fmt(q.used)} GB</b> ({q.used_pct:.1f}%)",
+        f"<code>[{_progress_bar(q.used_pct)}] {q.used_pct:.1f}%</code>",
     ]
 
 
 def _balance_line(balance: str | None) -> str:
-    return f"💰 الرصيد | Balance: {html.escape(balance) if balance else 'غير متاح | N/A'}"
+    return f"💰 <b>الرصيد | Balance:</b> {html.escape(balance) if balance else 'غير متاح | N/A'}"
 
 
-def format_alerts(alerts: list[Alert], balance: str | None) -> str:
-    lines = ["⚠️ <b>تنبيه استهلاك WE | WE usage alert</b>", ""]
+def format_alerts(alerts: list[Alert], data: AccountData) -> str:
+    lines = ["⚠️ <b>تنبيه استهلاك WE | WE Usage Alert</b>", ""]
+
+    # 1. Triggered alert(s)
     for a in alerts:
         if a.level >= 90:
-            lines.append("🔴 باقي 10% أو أقل | 10% or less left")
+            badge = "🔴 <b>باقي 10% أو أقل | 10% or less left</b>"
+        elif a.level >= 75:
+            badge = f"🟠 <b>تجاوزت {a.level}% | Crossed {a.level}%</b>"
         else:
-            lines.append(f"🟠 وصلت {a.level}% | Reached {a.level}%")
-        lines.extend(_quota_lines(a.quota))
+            badge = f"🟡 <b>وصلت {a.level}% | Reached {a.level}%</b>"
+
+        lines.extend([badge, *_quota_lines(a.quota), ""])
+
+    # 2. Total consumption overview
+    total = data.total
+    if total and len(data.quotas) > 1:
+        lines.extend([
+            "━━━━━━━━━━━━━━━━━━━",
+            "🌐 <b>الاستهلاك الكلي | Total Usage</b>",
+            f"• المتبقي | Remaining: <b>{_fmt(total.remaining)}</b> / {_fmt(total.total)} GB",
+            f"• المستخدم | Used: <b>{_fmt(total.used)} GB</b> ({total.used_pct:.1f}%)",
+            f"<code>[{_progress_bar(total.used_pct)}] {total.used_pct:.1f}%</code>",
+            "",
+        ])
+
+    # 3. All individual bundles breakdown if more than 1
+    if len(data.quotas) > 1:
+        lines.extend(["━━━━━━━━━━━━━━━━━━━", "📦 <b>حالة الباقات | All Bundles</b>", ""])
+        for q in data.quotas:
+            lines.append(
+                f"• <b>{html.escape(q.name)}:</b> {_fmt(q.remaining)}/{_fmt(q.total)} GB (مستخدم {q.used_pct:.1f}%)"
+            )
         lines.append("")
-    lines.append(_balance_line(balance))
+
+    lines.extend(["━━━━━━━━━━━━━━━━━━━", _balance_line(data.balance)])
     return "\n".join(lines)
 
 
 def format_report(data: AccountData) -> str:
-    lines = ["📊 <b>تقرير استهلاك WE | WE usage report</b>", ""]
-    if not data.quotas:
-        lines.append("لا توجد باقات | No quotas found")
-        lines.append("")
-    for q in data.quotas:
-        lines.extend(_quota_lines(q))
-        lines.append("")
-    lines.append(_balance_line(data.balance))
+    lines = ["📊 <b>تقرير استهلاك WE | WE Usage Report</b>", ""]
+
+    # 1. Total consumption (الاستهلاك كامل)
+    total = data.total
+    if total:
+        lines.extend([
+            "🌐 <b>الاستهلاك الكلي | Total Usage</b>",
+            f"• المتبقي | Remaining: <b>{_fmt(total.remaining)}</b> / {_fmt(total.total)} GB",
+            f"• المستخدم | Used: <b>{_fmt(total.used)} GB</b> ({total.used_pct:.1f}%)",
+            f"<code>[{_progress_bar(total.used_pct)}] {total.used_pct:.1f}%</code>",
+            "",
+        ])
+
+    # 2. Breakdown of each bundle
+    if data.quotas:
+        if len(data.quotas) > 1:
+            lines.extend(["━━━━━━━━━━━━━━━━━━━", "📦 <b>تفاصيل الباقات | Bundles Breakdown</b>", ""])
+            for q in data.quotas:
+                lines.extend([*_quota_lines(q, prefix="🔹"), ""])
+        elif not total:
+            # Single quota when total is not present
+            lines.extend([*_quota_lines(data.quotas[0]), ""])
+    else:
+        lines.append("لا توجد باقات | No quotas found\n")
+
+    lines.extend(["━━━━━━━━━━━━━━━━━━━", _balance_line(data.balance)])
     return "\n".join(lines)
 
 
