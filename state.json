@@ -1,8 +1,8 @@
 {
-  "last_error": "ScrapeError: Login failed: ",
+  "last_error": null,
   "quotas": {
     "Super 2 speed (250 GB)": {
-      "level": 0
+      "level": 25
     }
   }
 }
