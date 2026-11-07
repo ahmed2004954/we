@@ -1,7 +1,7 @@
 {
-  "last_error": "ScrapeError: Usage page did not show any quota",
+  "last_error": null,
   "quotas": {
-    "Super 2 speed (250 GB)": {
+    "GAME ON 40GB": {
       "level": 25
     }
   }
