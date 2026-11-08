@@ -1,5 +1,5 @@
 {
-  "last_error": "ScrapeError: Usage page did not show any quota",
+  "last_error": null,
   "quotas": {
     "GAME ON 40GB": {
       "level": 25
