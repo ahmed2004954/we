@@ -1,8 +1,8 @@
 {
-  "last_error": "ScrapeError: Login failed: ",
+  "last_error": null,
   "quotas": {
-    "GAME ON 40GB": {
-      "level": 25
+    "Super 2 speed (250 GB)": {
+      "level": 50
     }
   }
 }
